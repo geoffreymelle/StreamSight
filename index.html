@@ -8,6 +8,8 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="StreamSight">
     <title>StreamSight | Tactical Fly & Telemetry PWA</title>
+    <link rel="manifest" href="./manifest.json">
+    <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');</script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
