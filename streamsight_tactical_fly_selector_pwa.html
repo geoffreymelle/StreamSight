@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="StreamSight">
+    <title>StreamSight | Tactical Fly & Telemetry PWA</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Google Fonts: Inter & JetBrains Mono for Telemetry -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#162032',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* High-Contrast Streamside Outdoor Styling */
+        body {
+            background-color: #090d16;
+            color: #f8fafc;
+            -webkit-tap-highlight-color: transparent;
+        }
+        /* Custom Range Sliders for One-Handed Thumb Operation */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 10px;
+            background: #1e293b;
+            border-radius: 999px;
+            outline: none;
+            border: 1px solid #334155;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: #10b981;
+            border: 3px solid #090d16;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:active {
+            transform: scale(1.18);
+            background: #34d399;
+        }
+        .telemetry-card {
+            background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+        }
+        .pulse-dot {
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.35; }
+        }
+    </style>
+</head>
+<body class="min-h-screen pb-24 antialiased selection:bg-emerald-500 selection:text-slate-950">
+
+    <!-- Top App Header Bar -->
+    <header class="sticky top-0 z-30 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 py-3">
+        <div class="max-w-xl mx-auto flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-inner">
+                    <i class="fa-solid fa-water text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-extrabold text-base tracking-tight text-white">STREAMSIGHT</h1>
+                        <span id="dataStatusBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>
+                            LIVE TELEMETRY
+                        </span>
+                    </div>
+                    <p id="lastSyncText" class="text-[11px] text-slate-400 font-mono">Connecting to USGS & NOAA/Open-Meteo...</p>
+                </div>
+            </div>
+
+            <button id="syncBtn" onclick="syncAllTelemetry()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-slate-950 font-bold text-xs tracking-wide transition shadow-lg shadow-emerald-600/20">
+                <i id="syncIcon" class="fa-solid fa-rotate"></i>
+                <span>SYNC</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Mobile Container -->
+    <main class="max-w-xl mx-auto px-3.5 pt-4 space-y-4">
+
+        <!-- Alert / Status Toast Box (No window.alert used) -->
+        <div id="statusBanner" class="hidden rounded-xl p-3 bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-2.5">
+            <i class="fa-solid fa-triangle-exclamation text-amber-400 mt-0.5"></i>
+            <div class="flex-1" id="statusBannerText"></div>
+            <button onclick="document.getElementById('statusBanner').classList.add('hidden')" class="text-amber-400 hover:text-white px-1">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+
+        <!-- 1. WATERSHED & GAUGE SELECTOR -->
+        <section class="telemetry-card rounded-2xl p-4 border border-slate-800 shadow-xl space-y-3">
+            <div class="flex items-center justify-between">
+                <label for="presetSelect" class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-location-crosshairs text-emerald-400"></i>
+                    Target Watershed / USGS Gauge
+                </label>
+                <a id="usgsHeaderLink" href="https://waterdata.usgs.gov/monitoring-location/USGS-01471875/" target="_blank" rel="noopener" class="text-[11px] font-mono text-sky-400 hover:underline flex items-center gap-1">
+                    <span>USGS #01471875</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[9px]"></i>
+                </a>
+            </div>
+
+            <select id="presetSelect" onchange="handleWatershedChange()" class="w-full bg-slate-900 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-3 text-sm font-semibold text-white outline-none transition">
+                <option value="01471875" selected>Manatawny Creek near Spangsville, PA (01471875)</option>
+                <option value="01471980">Manatawny Creek near Pottstown, PA (01471980)</option>
+                <option value="01472000">Schuylkill River at Pottstown, PA (01472000)</option>
+                <option value="01472157">French Creek near Phoenixville, PA (01472157)</option>
+                <option value="01473000">Perkiomen Creek at Graterford, PA (01473000)</option>
+                <option value="01470960">Tulpehocken Creek near Reading, PA (01470960)</option>
+                <option value="01426500">West Branch Delaware at Hale Eddy, NY (01426500)</option>
+                <option value="custom">Custom 8-Digit USGS Gauge ID...</option>
+            </select>
+
+            <!-- Custom Gauge Input Row -->
+            <div id="customGaugeRow" class="hidden pt-1 flex gap-2">
+                <input id="customGaugeInput" type="text" inputmode="numeric" placeholder="Enter 8-digit USGS ID (e.g. 01556000)" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm font-mono text-white outline-none focus:border-emerald-500">
+                <button onclick="loadCustomGauge()" class="px-4 py-2.5 rounded-xl bg-sky-500 text-slate-950 font-bold text-xs uppercase tracking-wider">
+                    Load Gauge
+                </button>
+            </div>
+
+            <!-- Live Hydrograph & Weather Telemetry Grid -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+                <!-- Discharge / Flow -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>FLOW (00060)</span>
+                        <span id="flowTrendBadge" class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">--</span>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveCfsVal" class="text-xl font-extrabold font-mono text-white">--</span>
+                        <span class="text-xs font-mono text-slate-400">CFS</span>
+                    </div>
+                    <p id="flowDeltaSub" class="text-[10px] font-mono text-slate-400 mt-0.5">48h Hydrograph</p>
+                </div>
+
+                <!-- Gage Height -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>STAGE (00065)</span>
+                        <i class="fa-solid fa-ruler-vertical text-sky-400 text-xs"></i>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveStageVal" class="text-xl font-extrabold font-mono text-white">--</span>
+                        <span class="text-xs font-mono text-slate-400">FT</span>
+                    </div>
+                    <p id="turbiditySub" class="text-[10px] font-mono text-slate-400 mt-0.5">Turbidity: --</p>
+                </div>
+
+                <!-- Water Temperature -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>WATER TEMP</span>
+                        <span id="waterTempBadge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">LIVE</span>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveWaterTempVal" class="text-xl font-extrabold font-mono text-emerald-400">--</span>
+                        <span class="text-xs font-mono text-slate-400">°F</span>
+                    </div>
+                    <p id="waterTempSourceSub" class="text-[10px] font-mono text-slate-400 mt-0.5 truncate">Sensor 00010</p>
+                </div>
+
+                <!-- Barometric Pressure -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>BAROMETER</span>
+                        <span id="baroTrendBadge" class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-amber-400">--</span>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveBaroVal" class="text-xl font-extrabold font-mono text-amber-400">--</span>
+                        <span class="text-xs font-mono text-slate-400">inHg</span>
+                    </div>
+                    <p id="baroDeltaSub" class="text-[10px] font-mono text-slate-400 mt-0.5">3h Pressure Trend</p>
+                </div>
+
+                <!-- Air Temp & Wind -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>AIR & WIND</span>
+                        <i class="fa-solid fa-wind text-slate-400 text-xs"></i>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveAirTempVal" class="text-xl font-extrabold font-mono text-white">--</span>
+                        <span class="text-xs font-mono text-slate-400">°F</span>
+                    </div>
+                    <p id="windSub" class="text-[10px] font-mono text-slate-400 mt-0.5">Wind: -- mph</p>
+                </div>
+
+                <!-- 48-Hr Rain & Cloud Cover -->
+                <div class="bg-slate-950/80 border border-slate-800/90 rounded-xl p-3">
+                    <div class="flex items-center justify-between text-[11px] text-slate-400">
+                        <span>48H RAIN / SKY</span>
+                        <i class="fa-solid fa-cloud-rain text-sky-400 text-xs"></i>
+                    </div>
+                    <div class="mt-1 flex items-baseline gap-1">
+                        <span id="liveRainVal" class="text-xl font-extrabold font-mono text-sky-400">--</span>
+                        <span class="text-xs font-mono text-slate-400">in</span>
+                    </div>
+                    <p id="cloudSub" class="text-[10px] font-mono text-slate-400 mt-0.5">Cloud Cover: --%</p>
+                </div>
+            </div>
+
+            <!-- 48-Hour Mini Hydrograph Sparkline Bar -->
+            <div class="bg-slate-950/70 rounded-xl px-3 py-2 border border-slate-800/80 flex items-center justify-between gap-3">
+                <div class="text-[11px] font-mono text-slate-400">
+                    <span class="text-slate-300 font-semibold">48h Flow Curve:</span>
+                    <span id="hydroSummaryText">Awaiting USGS stream series...</span>
+                </div>
+                <svg id="sparklineSvg" class="w-28 h-7 stroke-sky-400 fill-none" viewBox="0 0 100 28">
+                    <polyline id="sparklinePoly" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="0,14 100,14"></polyline>
+                </svg>
+            </div>
+        </section>
+
+        <!-- 2. TARGET SPECIES, VANTAGE & WATERBODY TOGGLES -->
+        <section class="telemetry-card rounded-2xl p-4 border border-slate-800 shadow-xl space-y-3.5">
+            <div class="flex items-center justify-between">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-fish-fins text-emerald-400"></i>
+                    Target Profile & Vantage Point
+                </h2>
+                <button onclick="resetToLiveTelemetry()" class="text-[11px] font-mono text-emerald-400 hover:underline">
+                    Reset Overrides
+                </button>
+            </div>
+
+            <!-- Species 3-Way Selector -->
+            <div>
+                <label class="text-[11px] font-mono uppercase text-slate-400 block mb-1.5">Target Species</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" onclick="setSpecies('smallmouth')" id="sp-smallmouth" class="species-btn py-2.5 px-2 rounded-xl font-bold text-xs border transition flex flex-col items-center gap-1 bg-emerald-500/20 border-emerald-500 text-emerald-300">
+                        <i class="fa-solid fa-bolt text-sm"></i>
+                        <span>Smallmouth</span>
+                    </button>
+                    <button type="button" onclick="setSpecies('largemouth')" id="sp-largemouth" class="species-btn py-2.5 px-2 rounded-xl font-bold text-xs border transition flex flex-col items-center gap-1 bg-slate-900 border-slate-700 text-slate-300">
+                        <i class="fa-solid fa-water-ladder text-sm"></i>
+                        <span>Largemouth</span>
+                    </button>
+                    <button type="button" onclick="setSpecies('trout')" id="sp-trout" class="species-btn py-2.5 px-2 rounded-xl font-bold text-xs border transition flex flex-col items-center gap-1 bg-slate-900 border-slate-700 text-slate-300">
+                        <i class="fa-solid fa-feather-pointed text-sm"></i>
+                        <span>Trout</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Vantage Point & Waterbody Type Row -->
+            <div class="grid grid-cols-2 gap-2.5">
+                <div>
+                    <label class="text-[11px] font-mono uppercase text-slate-400 block mb-1.5">Vantage Point</label>
+                    <div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                        <button type="button" onclick="setVantage('wading')" id="vp-wading" class="py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950">
+                            <i class="fa-solid fa-person-walking mr-1"></i>Wading
+                        </button>
+                        <button type="button" onclick="setVantage('skiff')" id="vp-skiff" class="py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400">
+                            <i class="fa-solid fa-sailboat mr-1"></i>Skiff/SUP
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="text-[11px] font-mono uppercase text-slate-400 block mb-1.5">Water Type</label>
+                    <div class="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                        <button type="button" onclick="setWaterType('river')" id="wt-river" class="py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950">
+                            River/Creek
+                        </button>
+                        <button type="button" onclick="setWaterType('lake')" id="wt-lake" class="py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400">
+                            Lake/Pond
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STREAMSIDE MANUAL OVERRIDE SLIDERS & TOGGLES -->
+            <div class="pt-2 border-t border-slate-800/80 space-y-3.5">
+                <!-- Water Temp Slider -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <span class="font-semibold text-slate-300">Water Temperature Override</span>
+                        <span class="font-mono font-bold text-emerald-400"><span id="sliderWaterTempLabel">60</span>°F</span>
+                    </div>
+                    <input id="waterTempSlider" type="range" min="35" max="85" step="1" value="60" oninput="handleManualSliderChange()">
+                    <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                        <span>35°F (Lethargic)</span>
+                        <span>55°F (Transition)</span>
+                        <span>68°F+ (Blitz/Topwater)</span>
+                    </div>
+                </div>
+
+                <!-- Air Temp Slider -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1.5">
+                        <span class="font-semibold text-slate-300">Air Temperature</span>
+                        <span class="font-mono font-bold text-sky-400"><span id="sliderAirTempLabel">64</span>°F</span>
+                    </div>
+                    <input id="airTempSlider" type="range" min="25" max="100" step="1" value="64" oninput="handleManualSliderChange()">
+                </div>
+
+                <!-- Water Clarity 3-Way Toggle -->
+                <div>
+                    <div class="flex justify-between items-center mb-1.5">
+                        <label class="text-xs font-semibold text-slate-300">Water Clarity (Visibility)</label>
+                        <span id="clarityInferenceTag" class="text-[10px] font-mono text-sky-400">Inferred from Flow/Rain</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button type="button" onclick="setClarity('clear')" id="cl-clear" class="py-2 px-2 rounded-xl text-xs font-bold border transition bg-emerald-500/20 border-emerald-500 text-emerald-300">
+                            Gin Clear (&gt;4ft)
+                        </button>
+                        <button type="button" onclick="setClarity('stained')" id="cl-stained" class="py-2 px-2 rounded-xl text-xs font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                            Stained (2-4ft)
+                        </button>
+                        <button type="button" onclick="setClarity('muddy')" id="cl-muddy" class="py-2 px-2 rounded-xl text-xs font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                            Muddy (&lt;1.5ft)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Barometric Trend & Sky Condition -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="text-xs font-semibold text-slate-300 block mb-1.5">Barometric Trend</label>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <button type="button" onclick="setBaroTrend('falling')" id="bt-falling" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                                <i class="fa-solid fa-arrow-trend-down text-emerald-400 mr-0.5"></i>Falling
+                            </button>
+                            <button type="button" onclick="setBaroTrend('steady')" id="bt-steady" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-amber-500/20 border-amber-500 text-amber-300">
+                                <i class="fa-solid fa-minus mr-0.5"></i>Steady
+                            </button>
+                            <button type="button" onclick="setBaroTrend('rising')" id="bt-rising" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                                <i class="fa-solid fa-arrow-trend-up text-sky-400 mr-0.5"></i>Rising
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-xs font-semibold text-slate-300 block mb-1.5">Sky Condition</label>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <button type="button" onclick="setSky('sun')" id="sky-sun" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                                <i class="fa-solid fa-sun text-amber-400 mr-0.5"></i>Sunny
+                            </button>
+                            <button type="button" onclick="setSky('partly')" id="sky-partly" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-sky-500/20 border-sky-500 text-sky-300">
+                                <i class="fa-solid fa-cloud-sun mr-0.5"></i>Mixed
+                            </button>
+                            <button type="button" onclick="setSky('overcast')" id="sky-overcast" class="py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-300">
+                                <i class="fa-solid fa-cloud mr-0.5"></i>Overcast
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. CONDITION READ & METABOLIC SYNTHESIS -->
+        <section class="rounded-2xl p-4 bg-gradient-to-br from-emerald-950/60 via-slate-900 to-slate-900 border border-emerald-500/30 shadow-xl space-y-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <h2 class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
+                        Hydrograph &amp; Metabolic Read
+                    </h2>
+                </div>
+                <span id="metabolicWindowTag" class="text-[11px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Prime Chasing Window
+                </span>
+            </div>
+            <p id="conditionReadText" class="text-sm text-slate-200 leading-relaxed">
+                Synthesizing live stream conditions...
+            </p>
+        </section>
+
+        <!-- 4. TOP 3 TACTICAL FLY RECOMMENDATIONS -->
+        <section class="space-y-3">
+            <div class="flex items-center justify-between px-1">
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-award text-amber-400"></i>
+                    Dialed-In Fly Box Selection (Top 3)
+                </h2>
+                <span id="colorStrategyBadge" class="text-[11px] font-mono text-slate-400">
+                    Natural / Translucent Palette
+                </span>
+            </div>
+
+            <div id="flyCardsContainer" class="space-y-3">
+                <!-- Populated dynamically by JS engine -->
+            </div>
+        </section>
+
+        <!-- 5. RIGGING, LINE & PRESENTATION CALLOUT -->
+        <section class="telemetry-card rounded-2xl p-4 border border-slate-800 shadow-xl space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                <h2 class="text-xs font-extrabold uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                    <i class="fa-solid fa-sliders text-sky-400"></i>
+                    Rigging &amp; Tactical Presentation
+                </h2>
+                <span id="vantageBadge" class="text-[10px] font-mono px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                    Wading Angles
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 block">Rod &amp; Fly Line Pairing</span>
+                    <p id="rigRodLine" class="font-bold text-white mt-1 text-sm">--</p>
+                </div>
+                <div class="bg-slate-950/70 p-3 rounded-xl border border-slate-800/80">
+                    <span class="text-[10px] font-mono uppercase text-slate-400 block">Leader &amp; Tippet Formula</span>
+                    <p id="rigLeader" class="font-bold text-emerald-400 mt-1 text-sm font-mono">--</p>
+                </div>
+            </div>
+
+            <div class="bg-slate-950/70 p-3.5 rounded-xl border border-slate-800/80">
+                <span class="text-[10px] font-mono uppercase text-amber-400 block mb-1">
+                    <i class="fa-solid fa-compass mr-1"></i>Retrieve Cadence &amp; Holding Water Target
+                </span>
+                <p id="rigPresentation" class="text-xs text-slate-200 leading-relaxed">--</p>
+            </div>
+        </section>
+
+        <!-- 6. DIRECT STREAM GAUGE, WEATHER & FLY SHOP LINKS -->
+        <footer class="telemetry-card rounded-2xl p-4 border border-slate-800 space-y-3">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">
+                Live Verification &amp; Local Resources
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                <a id="footerUsgsLink" href="https://waterdata.usgs.gov/monitoring-location/USGS-01471875/" target="_blank" rel="noopener" class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-sky-400 font-semibold transition">
+                    <span><i class="fa-solid fa-chart-line mr-1.5"></i>USGS Gauge Page</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                </a>
+                <a id="footerNwsLink" href="https://forecast.weather.gov/MapClick.php?lat=40.3398&lon=-75.7366" target="_blank" rel="noopener" class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-emerald-400 font-semibold transition">
+                    <span><i class="fa-solid fa-cloud-sun-rain mr-1.5"></i>NWS Point Forecast</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                </a>
+                <a href="https://www.tcoflyfishing.com/pages/stream-conditions" target="_blank" rel="noopener" class="flex items-center justify-between p-2.5 rounded-xl bg-slate-950 hover:bg-slate-900 border border-slate-800 text-amber-400 font-semibold transition">
+                    <span><i class="fa-solid fa-store mr-1.5"></i>TCO Stream Reports</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                </a>
+            </div>
+            <p class="text-[11px] text-slate-500 text-center pt-1">
+                Tip: In Chrome on Android/iOS, tap <strong class="text-slate-300">Menu &rarr; Add to Home Screen</strong> to install StreamSight as an offline-ready field app.
+            </p>
+        </footer>
+
+    </main>
+
+    <script>
+        /********************************************************************
+         * 1. PRESET WATERSHED DATABASE (Manatawny Primary + Regional Gauges)
+         ********************************************************************/
+        const WATERSHED_PRESETS = {
+            "01471875": {
+                id: "01471875",
+                name: "Manatawny Creek near Spangsville, PA",
+                lat: 40.3398,
+                lon: -75.7366,
+                fallbackTempSite: null, // Has its own 00010 continuous temp sensor
+                defaultSpecies: "smallmouth",
+                waterType: "river",
+                medianCfs: 85
+            },
+            "01471980": {
+                id: "01471980",
+                name: "Manatawny Creek near Pottstown, PA",
+                lat: 40.2709,
+                lon: -75.6813,
+                fallbackTempSite: "01471875", // Cross-references Spangsville upstream for water temp!
+                fallbackTempName: "Spangsville Gauge (01471875)",
+                defaultSpecies: "smallmouth",
+                waterType: "river",
+                medianCfs: 115
+            },
+            "01472000": {
+                id: "01472000",
+                name: "Schuylkill River at Pottstown, PA",
+                lat: 40.2423,
+                lon: -75.6516,
+                fallbackTempSite: "01471875",
+                fallbackTempName: "Manatawny Spangsville (01471875)",
+                defaultSpecies: "smallmouth",
+                waterType: "river",
+                medianCfs: 1450
+            },
+            "01472157": {
+                id: "01472157",
+                name: "French Creek near Phoenixville, PA",
+                lat: 40.1515,
+                lon: -75.6016,
+                fallbackTempSite: "01471875",
+                fallbackTempName: "Manatawny Spangsville (01471875)",
+                defaultSpecies: "trout",
+                waterType: "river",
+                medianCfs: 68
+            },
+            "01473000": {
+                id: "01473000",
+                name: "Perkiomen Creek at Graterford, PA",
+                lat: 40.2287,
+                lon: -75.4519,
+                fallbackTempSite: "01471875",
+                fallbackTempName: "Manatawny Spangsville (01471875)",
+                defaultSpecies: "smallmouth",
+                waterType: "river",
+                medianCfs: 190
+            },
+            "01470960": {
+                id: "01470960",
+                name: "Tulpehocken Creek near Reading, PA",
+                lat: 40.3690,
+                lon: -75.9752,
+                fallbackTempSite: "01471875",
+                fallbackTempName: "Spangsville Sensor",
+                defaultSpecies: "trout",
+                waterType: "river",
+                medianCfs: 210
+            },
+            "01426500": {
+                id: "01426500",
+                name: "West Branch Delaware at Hale Eddy, NY",
+                lat: 42.0031,
+                lon: -75.3835,
+                fallbackTempSite: null,
+                defaultSpecies: "trout",
+                waterType: "river",
+                medianCfs: 600
+            }
+        };
+
+        /********************************************************************
+         * 2. APPLICATION STATE
+         ********************************************************************/
+        const state = {
+            siteId: "01471875",
+            siteName: "Manatawny Creek near Spangsville, PA",
+            lat: 40.3398,
+            lon: -75.7366,
+            species: "smallmouth",    // 'smallmouth' | 'largemouth' | 'trout'
+            vantage: "wading",        // 'wading' | 'skiff'
+            waterType: "river",       // 'river' | 'lake'
+            waterTempF: 60,
+            waterTempSource: "Live Sensor",
+            airTempF: 64,
+            cfs: null,
+            stageFt: null,
+            turbidityFnu: null,
+            flowTrend: "steady",      // 'rising' | 'steady' | 'falling'
+            flowChangePct: 0,
+            baroInHg: 29.95,
+            baroTrend: "steady",      // 'falling' | 'steady' | 'rising'
+            baroDeltaInHg: 0,
+            clarity: "clear",         // 'clear' | 'stained' | 'muddy'
+            sky: "partly",            // 'sun' | 'partly' | 'overcast'
+            windMph: 5,
+            rain48hIn: 0.0,
+            cloudCoverPct: 40,
+            isManualOverride: false,
+            liveSnapshot: null
+        };
+
+        /********************************************************************
+         * 3. INLINE PWA MANIFEST REGISTRATION
+         ********************************************************************/
+        function registerInlineManifest() {
+            const manifest = {
+                name: "StreamSight Tactical Fly Selector",
+                short_name: "StreamSight",
+                start_url: ".",
+                display: "standalone",
+                background_color: "#090d16",
+                theme_color: "#0f172a",
+                description: "Live USGS & Weather Fly Fishing Pattern & Rigging Selector"
+            };
+            const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+            const manifestURL = URL.createObjectURL(blob);
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = manifestURL;
+            document.head.appendChild(link);
+        }
+
+        function showBanner(msg) {
+            const banner = document.getElementById('statusBanner');
+            const text = document.getElementById('statusBannerText');
+            text.textContent = msg;
+            banner.classList.remove('hidden');
+        }
+
+        /********************************************************************
+         * 4. LIVE USGS & OPEN-METEO TELEMETRY ENGINE
+         ********************************************************************/
+        async function syncAllTelemetry() {
+            const syncIcon = document.getElementById('syncIcon');
+            syncIcon.classList.add('fa-spin');
+            document.getElementById('lastSyncText').textContent = "Querying USGS NWIS & Open-Meteo...";
+
+            const preset = WATERSHED_PRESETS[state.siteId];
+            const querySites = preset && preset.fallbackTempSite
+                ? `${state.siteId},${preset.fallbackTempSite}`
+                : state.siteId;
+
+            try {
+                // 1. Fetch USGS 48-Hour Instantaneous Values (00010=Temp C, 00060=CFS, 00065=Stage, 63680=Turbidity)
+                const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?format=json&sites=${querySites}&period=P2D&parameterCd=00010,00060,00065,63680&siteStatus=all`;
+                const usgsRes = await fetch(usgsUrl);
+                if (!usgsRes.ok) throw new Error("USGS API returned status " + usgsRes.status);
+                const usgsData = await usgsRes.json();
+
+                parseUsgsResponse(usgsData, preset);
+
+                // 2. Fetch Open-Meteo Live Weather & 48-Hour Barometric / Precip History
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${state.lat}&longitude=${state.lon}&current=temperature_2m,surface_pressure,cloud_cover,wind_speed_10m,precipitation&hourly=surface_pressure,precipitation&past_days=2&forecast_days=1&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`;
+                const weatherRes = await fetch(weatherUrl);
+                if (!weatherRes.ok) throw new Error("Weather API returned status " + weatherRes.status);
+                const weatherData = await weatherRes.json();
+
+                parseWeatherResponse(weatherData);
+
+                // Infer Water Clarity from Turbidity, 48h Rain, and Hydrograph Spike
+                inferWaterClarity(preset);
+
+                // Save snapshot for offline recovery & reset override state
+                state.isManualOverride = false;
+                state.liveSnapshot = JSON.parse(JSON.stringify(state));
+                try {
+                    localStorage.setItem('streamsight_last_state', JSON.stringify({
+                        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                        state: state
+                    }));
+                } catch (e) { /* Ignore storage quota errors in restricted frames */ }
+
+                updateBadgeState("LIVE TELEMETRY", "emerald");
+                document.getElementById('lastSyncText').textContent =
+                    `Synced ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • USGS #${state.siteId}`;
+
+            } catch (err) {
+                console.warn("Live telemetry fetch issue, checking cached state:", err);
+                loadCachedFallback();
+            } finally {
+                syncIcon.classList.remove('fa-spin');
+                syncControlsWithState();
+                renderTacticalRecommendations();
+            }
+        }
+
+        function parseUsgsResponse(json, preset) {
+            const timeSeries = json?.value?.timeSeries || [];
+            let primaryCfsSeries = [];
+            let primaryStage = null;
+            let primaryTempC = null;
+            let fallbackTempC = null;
+            let primaryTurbidity = null;
+
+            timeSeries.forEach(ts => {
+                const siteCode = ts?.sourceInfo?.siteCode?.[0]?.value;
+                const paramCode = ts?.variable?.variableCode?.[0]?.value;
+                const values = (ts?.values?.[0]?.value || [])
+                    .map(v => ({ val: parseFloat(v.value), time: v.dateTime }))
+                    .filter(v => !isNaN(v.val) && v.val > -999);
+
+                if (!values.length) return;
+                const latest = values[values.length - 1].val;
+
+                if (siteCode === state.siteId) {
+                    // Update dynamic coordinates if custom gauge
+                    const loc = ts?.sourceInfo?.geoLocation?.geogLocation;
+                    if (loc && loc.latitude && loc.longitude) {
+                        state.lat = loc.latitude;
+                        state.lon = loc.longitude;
+                    }
+                    if (ts?.sourceInfo?.siteName && !WATERSHED_PRESETS[state.siteId]) {
+                        state.siteName = ts.sourceInfo.siteName;
+                    }
+
+                    if (paramCode === "00060") primaryCfsSeries = values;
+                    if (paramCode === "00065") primaryStage = latest;
+                    if (paramCode === "00010") primaryTempC = latest;
+                    if (paramCode === "63680") primaryTurbidity = latest;
+                } else if (preset && siteCode === preset.fallbackTempSite && paramCode === "00010") {
+                    fallbackTempC = latest;
+                }
+            });
+
+            // Process Discharge & 24h/48h Trend
+            if (primaryCfsSeries.length > 0) {
+                const latestCfs = primaryCfsSeries[primaryCfsSeries.length - 1].val;
+                // Compare against ~18-24 hours ago (approx midpoint of 48h series)
+                const compareIdx = Math.max(0, Math.floor(primaryCfsSeries.length * 0.5));
+                const priorCfs = primaryCfsSeries[compareIdx].val || latestCfs;
+                const pctChange = priorCfs > 0 ? ((latestCfs - priorCfs) / priorCfs) * 100 : 0;
+
+                state.cfs = Math.round(latestCfs);
+                state.flowChangePct = Math.round(pctChange);
+
+                if (pctChange >= 12) {
+                    state.flowTrend = "rising";
+                } else if (pctChange <= -8) {
+                    state.flowTrend = "falling";
+                } else {
+                    state.flowTrend = "steady";
+                }
+
+                renderSparkline(primaryCfsSeries.map(d => d.val));
+            } else {
+                state.cfs = null;
+                state.flowTrend = "steady";
+            }
+
+            state.stageFt = primaryStage !== null ? primaryStage.toFixed(2) : null;
+            state.turbidityFnu = primaryTurbidity !== null ? primaryTurbidity.toFixed(1) : null;
+
+            // Process Water Temperature (Primary Sensor -> Cross-Gauge Fallback -> Air Temp Thermal Estimate)
+            if (primaryTempC !== null) {
+                state.waterTempF = Math.round((primaryTempC * 9 / 5) + 32);
+                state.waterTempSource = `Live Sensor (#${state.siteId})`;
+                document.getElementById('waterTempBadge').textContent = "LIVE";
+                document.getElementById('waterTempBadge').className = "text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400";
+            } else if (fallbackTempC !== null) {
+                state.waterTempF = Math.round((fallbackTempC * 9 / 5) + 32);
+                state.waterTempSource = `Via ${preset?.fallbackTempName || 'Adjacent Gauge'}`;
+                document.getElementById('waterTempBadge').textContent = "X-GAUGE";
+                document.getElementById('waterTempBadge').className = "text-[9px] font-mono px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-300";
+            } else {
+                state.waterTempSource = "Thermal Est. (No 00010)";
+                document.getElementById('waterTempBadge').textContent = "EST";
+                document.getElementById('waterTempBadge').className = "text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300";
+            }
+        }
+
+        function parseWeatherResponse(data) {
+            const current = data?.current || {};
+            if (typeof current.temperature_2m === "number") {
+                state.airTempF = Math.round(current.temperature_2m);
+            }
+            if (typeof current.wind_speed_10m === "number") {
+                state.windMph = Math.round(current.wind_speed_10m);
+            }
+            if (typeof current.cloud_cover === "number") {
+                state.cloudCoverPct = Math.round(current.cloud_cover);
+                if (state.cloudCoverPct <= 28) state.sky = "sun";
+                else if (state.cloudCoverPct <= 72) state.sky = "partly";
+                else state.sky = "overcast";
+            }
+
+            // Convert hPa to inHg (1 hPa = 0.029529983071445 inHg)
+            const hpaFactor = 0.02953;
+            if (typeof current.surface_pressure === "number") {
+                state.baroInHg = (current.surface_pressure * hpaFactor).toFixed(2);
+            }
+
+            // Calculate 3-Hour Barometric Pressure Trend & 48-Hour Rainfall Total
+            const hourlyPressures = data?.hourly?.surface_pressure || [];
+            const hourlyPrecip = data?.hourly?.precipitation || [];
+
+            if (hourlyPressures.length >= 4) {
+                // Find index closest to current pressure
+                const validPressures = hourlyPressures.filter(p => typeof p === "number");
+                if (validPressures.length >= 48) {
+                    const nowIdx = Math.min(48, validPressures.length - 1);
+                    const pNow = validPressures[nowIdx] * hpaFactor;
+                    const p3hAgo = validPressures[Math.max(0, nowIdx - 3)] * hpaFactor;
+                    const delta = pNow - p3hAgo;
+                    state.baroDeltaInHg = delta.toFixed(2);
+
+                    if (delta <= -0.03) state.baroTrend = "falling";
+                    else if (delta >= 0.03) state.baroTrend = "rising";
+                    else state.baroTrend = "steady";
+                }
+            }
+
+            if (hourlyPrecip.length > 0) {
+                // Sum first 48 hours of past precipitation
+                const past48 = hourlyPrecip.slice(0, 48).reduce((acc, v) => acc + (Number(v) || 0), 0);
+                state.rain48hIn = past48.toFixed(2);
+            }
+
+            // If gauge lacked both primary and fallback water temp, estimate from air temp
+            if (state.waterTempSource.startsWith("Thermal Est")) {
+                state.waterTempF = Math.max(38, Math.min(78, Math.round(state.airTempF * 0.88 + 4)));
+            }
+        }
+
+        function inferWaterClarity(preset) {
+            const fnu = parseFloat(state.turbidityFnu);
+            const rain = parseFloat(state.rain48hIn) || 0;
+            const median = preset?.medianCfs || 120;
+            const ratio = state.cfs ? state.cfs / median : 1;
+
+            if (!isNaN(fnu)) {
+                if (fnu >= 25) state.clarity = "muddy";
+                else if (fnu >= 7) state.clarity = "stained";
+                else state.clarity = "clear";
+                document.getElementById('clarityInferenceTag').textContent = `Verified Sensor (${fnu} FNU)`;
+                return;
+            }
+
+            if (rain >= 1.1 || ratio >= 2.6 || state.flowChangePct >= 45) {
+                state.clarity = "muddy";
+                document.getElementById('clarityInferenceTag').textContent = "Inferred: High Runoff / Spike";
+            } else if (rain >= 0.35 || ratio >= 1.45 || state.flowChangePct >= 15) {
+                state.clarity = "stained";
+                document.getElementById('clarityInferenceTag').textContent = "Inferred: Green/Tannic Stain";
+            } else {
+                state.clarity = "clear";
+                document.getElementById('clarityInferenceTag').textContent = "Inferred: Low/Stable Clear";
+            }
+        }
+
+        function renderSparkline(values) {
+            const poly = document.getElementById('sparklinePoly');
+            const summary = document.getElementById('hydroSummaryText');
+            if (!values || values.length < 2) {
+                poly.setAttribute('points', '0,14 100,14');
+                summary.textContent = "Steady baseline flow";
+                return;
+            }
+            // Downsample to ~24 points
+            const step = Math.max(1, Math.floor(values.length / 24));
+            const sampled = values.filter((_, idx) => idx % step === 0);
+            const min = Math.min(...sampled);
+            const max = Math.max(...sampled);
+            const range = Math.max(1, max - min);
+
+            const pts = sampled.map((v, idx) => {
+                const x = ((idx / (sampled.length - 1)) * 100).toFixed(1);
+                const y = (25 - ((v - min) / range) * 22).toFixed(1);
+                return `${x},${y}`;
+            }).join(' ');
+
+            poly.setAttribute('points', pts);
+            summary.textContent = `Min ${Math.round(min)} • Max ${Math.round(max)} CFS`;
+        }
+
+        function loadCachedFallback() {
+            try {
+                const raw = localStorage.getItem('streamsight_last_state');
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    Object.assign(state, parsed.state);
+                    updateBadgeState("CACHED OFFLINE", "amber");
+                    document.getElementById('lastSyncText').textContent =
+                        `Offline Cache (${parsed.timestamp}) • Manual Sliders Active`;
+                    showBanner("Cell signal or API unreachable. Loaded your last synced telemetry from offline storage.");
+                    return;
+                }
+            } catch (e) {}
+
+            updateBadgeState("MANUAL MODE", "amber");
+            document.getElementById('lastSyncText').textContent = "Offline Mode • Use Sliders Below";
+        }
+
+        function updateBadgeState(label, color) {
+            const badge = document.getElementById('dataStatusBadge');
+            if (color === "emerald") {
+                badge.className = "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></span>${label}`;
+            } else if (color === "sky") {
+                badge.className = "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-sky-500/15 text-sky-400 border border-sky-500/30";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span>${label}`;
+            } else {
+                badge.className = "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-mono uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30";
+                badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>${label}`;
+            }
+        }
+
+        /********************************************************************
+         * 5. UI CONTROLS & INTERACTIVE OVERRIDES
+         ********************************************************************/
+        function syncControlsWithState() {
+            // Update Top Telemetry Cards
+            document.getElementById('liveCfsVal').textContent = state.cfs !== null ? state.cfs : "--";
+            document.getElementById('liveStageVal').textContent = state.stageFt !== null ? state.stageFt : "--";
+            document.getElementById('turbiditySub').textContent = state.turbidityFnu
+                ? `Turbidity: ${state.turbidityFnu} FNU`
+                : `Clarity: ${state.clarity.toUpperCase()}`;
+
+            const flowBadge = document.getElementById('flowTrendBadge');
+            const sign = state.flowChangePct > 0 ? `+${state.flowChangePct}%` : `${state.flowChangePct}%`;
+            if (state.flowTrend === "rising") {
+                flowBadge.textContent = `RISING ${sign}`;
+                flowBadge.className = "font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300";
+                document.getElementById('flowDeltaSub').textContent = "Rising Limb (Pushing bankside)";
+            } else if (state.flowTrend === "falling") {
+                flowBadge.textContent = `FALLING ${sign}`;
+                flowBadge.className = "font-mono text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300";
+                document.getElementById('flowDeltaSub').textContent = "Receding Limb (Prime feed)";
+            } else {
+                flowBadge.textContent = `STEADY ${sign}`;
+                flowBadge.className = "font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-300";
+                document.getElementById('flowDeltaSub').textContent = "Stable 24h Hydrograph";
+            }
+
+            document.getElementById('liveWaterTempVal').textContent = state.waterTempF;
+            document.getElementById('waterTempSourceSub').textContent = state.waterTempSource;
+
+            document.getElementById('liveBaroVal').textContent = state.baroInHg;
+            const baroBadge = document.getElementById('baroTrendBadge');
+            baroBadge.textContent = state.baroTrend.toUpperCase();
+            document.getElementById('baroDeltaSub').textContent = `3h Delta: ${state.baroDeltaInHg >= 0 ? '+' : ''}${state.baroDeltaInHg} inHg`;
+
+            document.getElementById('liveAirTempVal').textContent = state.airTempF;
+            document.getElementById('windSub').textContent = `Wind: ${state.windMph} mph`;
+            document.getElementById('liveRainVal').textContent = state.rain48hIn;
+            document.getElementById('cloudSub').textContent = `Cloud Cover: ${state.cloudCoverPct}%`;
+
+            // Sliders
+            document.getElementById('waterTempSlider').value = state.waterTempF;
+            document.getElementById('sliderWaterTempLabel').textContent = state.waterTempF;
+            document.getElementById('airTempSlider').value = state.airTempF;
+            document.getElementById('sliderAirTempLabel').textContent = state.airTempF;
+
+            // External Links
+            const usgsUrl = `https://waterdata.usgs.gov/monitoring-location/USGS-${state.siteId}/`;
+            document.getElementById('usgsHeaderLink').href = usgsUrl;
+            document.getElementById('usgsHeaderLink').querySelector('span').textContent = `USGS #${state.siteId}`;
+            document.getElementById('footerUsgsLink').href = usgsUrl;
+            document.getElementById('footerNwsLink').href = `https://forecast.weather.gov/MapClick.php?lat=${state.lat}&lon=${state.lon}`;
+
+            highlightActiveToggles();
+        }
+
+        function highlightActiveToggles() {
+            // Species
+            ['smallmouth', 'largemouth', 'trout'].forEach(sp => {
+                const btn = document.getElementById(`sp-${sp}`);
+                if (state.species === sp) {
+                    btn.className = "species-btn py-2.5 px-2 rounded-xl font-bold text-xs border transition flex flex-col items-center gap-1 bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-inner";
+                } else {
+                    btn.className = "species-btn py-2.5 px-2 rounded-xl font-bold text-xs border transition flex flex-col items-center gap-1 bg-slate-900 border-slate-700 text-slate-400 hover:text-white";
+                }
+            });
+
+            // Vantage
+            document.getElementById('vp-wading').className = state.vantage === 'wading'
+                ? "py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950"
+                : "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400";
+            document.getElementById('vp-skiff').className = state.vantage === 'skiff'
+                ? "py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950"
+                : "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400";
+
+            // Waterbody
+            document.getElementById('wt-river').className = state.waterType === 'river'
+                ? "py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950"
+                : "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400";
+            document.getElementById('wt-lake').className = state.waterType === 'lake'
+                ? "py-2 px-2 rounded-lg text-xs font-bold transition bg-emerald-500 text-slate-950"
+                : "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400";
+
+            // Clarity
+            ['clear', 'stained', 'muddy'].forEach(cl => {
+                const btn = document.getElementById(`cl-${cl}`);
+                btn.className = state.clarity === cl
+                    ? "py-2 px-2 rounded-xl text-xs font-bold border transition bg-emerald-500/20 border-emerald-500 text-emerald-300"
+                    : "py-2 px-2 rounded-xl text-xs font-bold border transition bg-slate-900 border-slate-700 text-slate-400";
+            });
+
+            // Baro Trend
+            ['falling', 'steady', 'rising'].forEach(bt => {
+                const btn = document.getElementById(`bt-${bt}`);
+                btn.className = state.baroTrend === bt
+                    ? "py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-amber-500/20 border-amber-500 text-amber-300"
+                    : "py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-400";
+            });
+
+            // Sky
+            ['sun', 'partly', 'overcast'].forEach(sk => {
+                const btn = document.getElementById(`sky-${sk}`);
+                btn.className = state.sky === sk
+                    ? "py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-sky-500/20 border-sky-500 text-sky-300"
+                    : "py-2 px-1.5 rounded-xl text-[11px] font-bold border transition bg-slate-900 border-slate-700 text-slate-400";
+            });
+        }
+
+        function handleWatershedChange() {
+            const val = document.getElementById('presetSelect').value;
+            const customRow = document.getElementById('customGaugeRow');
+            if (val === 'custom') {
+                customRow.classList.remove('hidden');
+                return;
+            }
+            customRow.classList.add('hidden');
+            const preset = WATERSHED_PRESETS[val];
+            if (preset) {
+                state.siteId = preset.id;
+                state.siteName = preset.name;
+                state.lat = preset.lat;
+                state.lon = preset.lon;
+                state.species = preset.defaultSpecies;
+                state.waterType = preset.waterType;
+                syncAllTelemetry();
+            }
+        }
+
+        function loadCustomGauge() {
+            const raw = document.getElementById('customGaugeInput').value.trim();
+            if (!/^\d{8,15}$/.test(raw)) {
+                showBanner("Please enter a valid 8-digit USGS Station ID (for example: 01471875).");
+                return;
+            }
+            state.siteId = raw;
+            state.siteName = `USGS Site #${raw}`;
+            syncAllTelemetry();
+        }
+
+        function handleManualSliderChange() {
+            state.waterTempF = parseInt(document.getElementById('waterTempSlider').value, 10);
+            state.airTempF = parseInt(document.getElementById('airTempSlider').value, 10);
+            document.getElementById('sliderWaterTempLabel').textContent = state.waterTempF;
+            document.getElementById('sliderAirTempLabel').textContent = state.airTempF;
+            document.getElementById('liveWaterTempVal').textContent = state.waterTempF;
+            document.getElementById('liveAirTempVal').textContent = state.airTempF;
+            markManualOverride();
+            renderTacticalRecommendations();
+        }
+
+        function setSpecies(sp) { state.species = sp; highlightActiveToggles(); renderTacticalRecommendations(); }
+        function setVantage(vp) { state.vantage = vp; highlightActiveToggles(); renderTacticalRecommendations(); }
+        function setWaterType(wt) { state.waterType = wt; highlightActiveToggles(); renderTacticalRecommendations(); }
+        function setClarity(cl) {
+            state.clarity = cl;
+            document.getElementById('clarityInferenceTag').textContent = "Streamside Override";
+            markManualOverride();
+            highlightActiveToggles();
+            renderTacticalRecommendations();
+        }
+        function setBaroTrend(bt) { state.baroTrend = bt; markManualOverride(); highlightActiveToggles(); renderTacticalRecommendations(); }
+        function setSky(sk) { state.sky = sk; markManualOverride(); highlightActiveToggles(); renderTacticalRecommendations(); }
+
+        function markManualOverride() {
+            state.isManualOverride = true;
+            updateBadgeState("MANUAL OVERRIDE", "sky");
+        }
+
+        function resetToLiveTelemetry() {
+            if (state.liveSnapshot) {
+                const keepSpecies = state.species;
+                const keepVantage = state.vantage;
+                Object.assign(state, JSON.parse(JSON.stringify(state.liveSnapshot)));
+                state.species = keepSpecies;
+                state.vantage = keepVantage;
+                state.isManualOverride = false;
+                updateBadgeState("LIVE TELEMETRY", "emerald");
+                syncControlsWithState();
+                renderTacticalRecommendations();
+            } else {
+                syncAllTelemetry();
+            }
+        }
+
+        /********************************************************************
+         * 6. TACTICAL ENTOMOLOGY, FORAGE & RIGGING DECISION ENGINE
+         ********************************************************************/
+        function getColorPalette() {
+            if (state.clarity === 'muddy') {
+                return {
+                    badge: "High-Contrast / Silhouette Palette",
+                    streamerColor: "Black / Purple or Black / Chartreuse Tail",
+                    forageColor: "Dark Black / Blue Flake or Burnt Orange",
+                    pivotColor: "Chartreuse / White or Solid Black",
+                    nymphColor: "Black / Fluorescent Orange Hot-Spot"
+                };
+            }
+            if (state.clarity === 'stained' || state.sky === 'overcast') {
+                return {
+                    badge: "UV / Mutated Olive & Copper Palette",
+                    streamerColor: "Olive / Chartreuse or Sculpin Olive / Amber",
+                    forageColor: "Rusty Brown / Orange Claws or Rootbeer",
+                    pivotColor: "Yellow / Olive or Pearl / Copper Flash",
+                    nymphColor: "Hare's Ear Natural with Gold/Copper Bead"
+                };
+            }
+            return {
+                badge: "Gin-Clear Natural / Translucent Palette",
+                streamerColor: "Sculpin Olive / White Belly or Grey / Tan",
+                forageColor: "Molting Olive / Tan Crayfish or Translucent Baitfish",
+                pivotColor: "White / Silver Minnow or Natural Deer Hair",
+                nymphColor: "Dark Brown / Olive Pheasant Tail (Matte Tungsten)"
+            };
+        }
+
+        function renderTacticalRecommendations() {
+            const palette = getColorPalette();
+            document.getElementById('colorStrategyBadge').textContent = palette.badge;
+
+            if (state.species === 'trout') {
+                renderTroutEngine(palette);
+            } else {
+                renderBassEngine(palette);
+            }
+        }
+
+        function renderBassEngine(palette) {
+            const t = state.waterTempF;
+            const isSmallie = state.species === 'smallmouth';
+            const isLake = state.waterType === 'lake';
+            const isSkiff = state.vantage === 'skiff';
+
+            let windowLabel = "";
+            let conditionRead = "";
+            let flies = [];
+            let rodLine = "";
+            let leader = "";
+            let presentation = "";
+
+            // Flow Context Sentence
+            const flowSentence = isLake
+                ? `In stillwater (${state.waterTempF}°F), focus on wind-blown points, submerged weed edges, and drop-offs.`
+                : state.flowTrend === 'rising'
+                    ? `With flows on the rising limb (${state.cfs || '--'} CFS), fish are tucking tight against softer bankside seams, eddy Cushions, and flooded shoreline cover.`
+                    : state.flowTrend === 'falling'
+                        ? `With the hydrograph receding (${state.cfs || '--'} CFS), ${isSmallie ? 'smallmouth' : 'largemouth'} are pulling onto primary current breaks, mid-river ledges, and tailouts to ambush bait washing out.`
+                        : `With stable flows (${state.cfs || '--'} CFS at ${state.waterTempF}°F), fish are holding in textbook transition seams, boulder gardens, and shaded drop-offs.`;
+
+            const baroSentence = state.baroTrend === 'falling'
+                ? `Falling barometric pressure (${state.baroInHg} inHg) triggers aggressive roaming—expect fish to chase moving profiles higher in the water column.`
+                : state.baroTrend === 'rising'
+                    ? `High/rising pressure (${state.baroInHg} inHg) locks fish tighter to bottom structure—slow down your retrieve and extend pauses near heavy cover.`
+                    : `Steady pressure (${state.baroInHg} inHg) calls for methodical structure probing before switching to reaction strips.`;
+
+            // 1. COLD / LETHARGIC WINDOW (< 55°F)
+            if (t < 55) {
+                windowLabel = "Cold Water • Bottom Dredge Window";
+                conditionRead = `${flowSentence} At ${t}°F, bass metabolism is sluggish; fish are stacked in the deepest wintering pools, slow Frogwater, and dark rocky ledges. ${baroSentence}`;
+
+                flies = [
+                    {
+                        slot: "Primary Bottom Dredge",
+                        name: "Heavy Lead-Eye Clouser Minnow",
+                        category: "Jig Streamer",
+                        size: "Size 2 – 4",
+                        color: palette.streamerColor,
+                        why: `Lead eyes get straight down into the slowest bottom bucket at ${t}°F and hop vertically without snagging on dormant rock ledges.`,
+                        url: "https://www.orvis.com/product/clouser-minnow/0422.html"
+                    },
+                    {
+                        slot: "Targeted Forage Pick",
+                        name: "Clawdad / Near Nuff Crayfish",
+                        category: "Benthic Crayfish",
+                        size: "Size 4 – 6",
+                        color: palette.forageColor,
+                        why: "Torpid crawfish creeping along dark cobble are the highest-calorie, lowest-effort meal for cold-water bass.",
+                        url: "https://www.tcoflyfishing.com/collections/bass-flies"
+                    },
+                    {
+                        slot: "Finesse Reaction Pivot",
+                        name: "Conehead Marabou Muddy Buddy / Woolly Bugger",
+                        category: "Plume Leech/Bugger",
+                        size: "Size 4 – 6",
+                        color: palette.pivotColor,
+                        why: "Marabou breathes and undulates in micro-currents even when dead-sticked on the bottom for 5+ seconds between twitches.",
+                        url: "https://www.flyfishfood.com/collections/streamer-flies"
+                    }
+                ];
+
+                rodLine = "7wt or 8wt • 200gr Sink-Tip or Intermediate Line";
+                leader = "4ft to 5ft of 12lb–15lb Fluorocarbon (straight or 2-piece butt-to-tippet)";
+                presentation = isSkiff
+                    ? "Position your skiff/paddleboard upstream of the deepest wintering hole; cast 45° down-and-across, let the fly hit bottom, and crawl it with 1-inch ticks and 5-second dead pauses."
+                    : "Wading: Approach deep slow pools quietly. Cast slightly upstream, allow a full count-down to the rocky bed, and slowly drag/pendulum swing across the deepest trough.";
+            }
+            // 2. PRIME PRE-SPAWN / FALL BLITZ WINDOW (55°F – 67°F)
+            else if (t >= 55 && t <= 67) {
+                windowLabel = "Prime Metabolic Chasing Window";
+                conditionRead = `${flowSentence} At ${t}°F, ${isSmallie ? 'smallmouth' : 'largemouth'} are in their peak metabolic window—actively patrolling mid-depth transition shelves, boulder seams, and submerged timber. ${baroSentence}`;
+
+                flies = [
+                    {
+                        slot: "Primary Searcher / Confidence",
+                        name: isSmallie ? "Schultz's Swinging D / Murdich Minnow" : "EP Baitfish / Finesse Game Changer",
+                        category: "Mid-Column Baitfish",
+                        size: "Size 2 – 1/0 (3\" to 4\")",
+                        color: palette.streamerColor,
+                        why: `Erratic side-to-side darting and pause-suspension triggers violent T-bone strikes from patrolling ${t}°F bass.`,
+                        url: "https://www.tcoflyfishing.com/collections/streamers"
+                    },
+                    {
+                        slot: "Targeted Forage Pick",
+                        name: "Galloup's Bottom's Up / Sculpzilla",
+                        category: "Sculpin / Crayfish Hybrid",
+                        size: "Size 2 – 4",
+                        color: palette.forageColor,
+                        why: "Imitates both darting sculpins and fleeing crawfish along rocky drop-offs and riffle tailouts.",
+                        url: "https://www.orvis.com/streamers"
+                    },
+                    {
+                        slot: "Low-Light / Falling Baro Pivot",
+                        name: (state.baroTrend === 'falling' || state.sky === 'overcast')
+                            ? "Stealth Bomber / Foam Slider"
+                            : "TeQueely / Articulated Sparkle Minnow",
+                        category: (state.baroTrend === 'falling' || state.sky === 'overcast') ? "Subtle Topwater / Wake" : "Flash Reaction Streamer",
+                        size: "Size 2 – 4",
+                        color: palette.pivotColor,
+                        why: (state.baroTrend === 'falling' || state.sky === 'overcast')
+                            ? "With falling pressure/cloud cover at this temp, big fish will slide shallow to crush waking slider patterns."
+                            : "High flash and erratic kick draw reaction eats from fish tucked behind current breaks.",
+                        url: "https://www.feather-craft.com/flies/bass-flies"
+                    }
+                ];
+
+                rodLine = "7wt or 8wt • Weight-Forward Floating or Hover/Intermediate Tip";
+                leader = "6ft to 7.5ft tapered to 12lb–16lb Fluorocarbon (use a Non-Slip Mono Loop knot for maximum streamer swing)";
+                presentation = isSkiff
+                    ? "Skiff/SUP: Hold mid-channel and fire 45° casts tight to bankside rootwads and ledge rock. Use two sharp 6-inch strips followed by a 2-second glide down the drop-off."
+                    : "Wading: Quarter casts across riffle corners and boulder cushions. Mend once to get the streamer into the seam, then strip-strip-pause back through the soft inside edge.";
+            }
+            // 3. WARM SUMMER / TOPWATER & RIFFLE WINDOW (68°F+)
+            else {
+                windowLabel = "Warm Water • Riffle & Surface Blitz";
+                conditionRead = `${flowSentence} With water at ${t}°F, dissolved oxygen is prime in choppy riffles, shade lines, and grass beds. ${baroSentence}`;
+
+                flies = [
+                    {
+                        slot: "Primary Topwater / Surface Call",
+                        name: isSmallie ? "Boogle Bug Popper / Spun Deer Hair Bug" : "Hollow Fleye Frog / Weedless Diver",
+                        category: "Topwater Popper / Diver",
+                        size: "Size 2 – 4",
+                        color: palette.pivotColor,
+                        why: `Warm ${t}°F water pushes bass into shallow oxygenated pockets and shade lines where they aggressively hunt surface commotion.`,
+                        url: "https://www.orvis.com/product/booglebug-popper/2E7R.html"
+                    },
+                    {
+                        slot: "Targeted Subsurface Forage",
+                        name: isSmallie ? "Todd's Wiggle Minnow / Hellgrammite" : "Damselfly / Dragonfly Nymph & Adult",
+                        category: "Subsurface / Wake Forage",
+                        size: "Size 4 – 6",
+                        color: palette.forageColor,
+                        why: isSmallie
+                            ? "Riffle-dwelling hellgrammites and young-of-the-year minnows are the #1 summer forage in PA warmwater creeks."
+                            : "Cruising largemouth key heavily on damselflies and bluegill fry around summer vegetation.",
+                        url: "https://www.tcoflyfishing.com/collections/bass-flies"
+                    },
+                    {
+                        slot: "Mid-Day Sun / Deep Shade Pivot",
+                        name: "White/Olive Clouser or Jigged Craw",
+                        category: "Dropper / Shade Probe",
+                        size: "Size 4",
+                        color: palette.streamerColor,
+                        why: "When high sun pushes fish under rootballs or deep riffle troughs, a compact jigged pattern draws instant strikes.",
+                        url: "https://www.flyfishfood.com/collections/bass-flies"
+                    }
+                ];
+
+                rodLine = "6wt to 8wt • Weight-Forward Floating Line (Warmwater Taper)";
+                leader = "7.5ft to 9ft Monofilament tapered to 10lb–14lb tippet (Mono keeps poppers & sliders riding high)";
+                presentation = isSkiff
+                    ? "Skiff/SUP: Target shaded banks, overhanging sycamores, and riffle drop-offs. Pop once loudly, let the rings disappear for 3 full seconds, then give two quick chugs."
+                    : "Wading: Work upstream or across choppy oxygenated riffles and eddies. Dead-drift or softly twitch topwater bugs along foam lines; strip subsurface minnows rapidly across tailouts.";
+            }
+
+            updateTacticalDOM(windowLabel, conditionRead, flies, rodLine, leader, presentation);
+        }
+
+        function renderTroutEngine(palette) {
+            const t = state.waterTempF;
+            const isSkiff = state.vantage === 'skiff';
+
+            let windowLabel = "";
+            let conditionRead = "";
+            let flies = [];
+            let rodLine = "";
+            let leader = "";
+            let presentation = "";
+
+            if (t > 68) {
+                windowLabel = "Thermal Stress Alert (>68°F)";
+                conditionRead = `At ${t}°F, trout experience thermal stress and stack tightly at cold spring seeps and tributary mouths. Consider targeting Smallmouth Bass on Manatawny/Schuylkill until water temps drop below 66°F, or fish early morning cold tributaries.`;
+            } else if (t < 48) {
+                windowLabel = "Cold Water • Deep Euro/Indicator Nymphing";
+                conditionRead = `With water at ${t}°F and flows at ${state.cfs || '--'} CFS (${state.flowTrend}), trout are holding near the river bed in slower winter/early-spring seams and deep tailouts. Keep flies directly on the bottom at slow drift speed.`;
+            } else {
+                windowLabel = "Prime Trout Drift & Streamer Window";
+                conditionRead = `At ${t}°F with ${state.flowTrend} flows (${state.cfs || '--'} CFS) and ${state.baroTrend} pressure (${state.baroInHg} inHg), trout are actively feeding in riffle corners, foam seams, and transitional drop-offs.`;
+            }
+
+            const isStreamerWeather = state.clarity !== 'clear' || state.baroTrend === 'falling' || state.sky === 'overcast' || state.flowTrend === 'rising';
+
+            flies = [
+                {
+                    slot: "Primary Confidence Rig",
+                    name: isStreamerWeather ? "Tungsten Conehead Sculpin / Bugger" : "Tungsten Pheasant Tail / Frenchieworm Rig",
+                    category: isStreamerWeather ? "Micro-Streamer" : "Point Nymph",
+                    size: isStreamerWeather ? "Size 6 – 10" : "Size 14 – 18",
+                    color: isStreamerWeather ? palette.streamerColor : palette.nymphColor,
+                    why: isStreamerWeather
+                        ? "Stained water or low light/falling pressure pulls big trout out of undercut banks to chase high-calorie sculpins."
+                        : "Gets immediately into the bottom 6 inches of the drift column where 80% of trout feeding occurs.",
+                    url: "https://www.tcoflyfishing.com/collections/nymphs"
+                },
+                {
+                    slot: "Hatch / Dropper Match",
+                    name: (t >= 52 && t <= 65) ? "CDC Blue Winged Olive / Sulphur Emerger" : "Zebra Midge / Walt's Worm Dropper",
+                    category: (t >= 52 && t <= 65) ? "Emerger / Dry-Dropper" : "Subsurface Larva",
+                    size: (t >= 52 && t <= 65) ? "Size 16 – 20" : "Size 16 – 22",
+                    color: "Olive / Tan / Sexy Walt's UV",
+                    why: (t >= 52 && t <= 65)
+                        ? `Water temp of ${t}°F is right in the wheelhouse for mayfly and caddis emergence in the upper film.`
+                        : "Caddis pupae and chironomids remain active year-round regardless of barometric swings.",
+                    url: "https://www.orvis.com/nymphs-fly-fishing-flies"
+                },
+                {
+                    slot: "Aggressive / Attractor Pivot",
+                    name: state.clarity === 'muddy' ? "San Juan Worm / Squirmy + Black Leach" : "Chubby Chernobyl / Elk Hair Caddis (Dry-Dropper)",
+                    category: state.clarity === 'muddy' ? "High-Water Attractor" : "Dry / Terrestrial Indicator",
+                    size: "Size 12 – 16",
+                    color: palette.pivotColor,
+                    why: state.clarity === 'muddy'
+                        ? "Aquatic worms flushed by rising/stained flows are the #1 opportunistic meal for trout."
+                        : "Suspends a tungsten nymph through skinny riffles while drawing opportunistic surface eats.",
+                    url: "https://www.flyfishfood.com/collections/trout-flies"
+                }
+            ];
+
+            rodLine = "4wt or 5wt • WF Floating Line (or Tight-Line Euro Leader)";
+            leader = state.clarity === 'clear'
+                ? "9ft to 11ft tapered leader to 5X–6X Fluorocarbon tippet"
+                : "7.5ft to 9ft tapered leader to 3X–4X Fluorocarbon tippet";
+            presentation = isSkiff
+                ? "Float/Skiff: Set drift speed to match the inside seam; cast 45° ahead of boulder pockets and mend immediately to achieve a drag-free dead drift."
+                : "Wading: Work upstream from the tailout into the riffle throat. Space your two-nymph rig 18 inches apart with the heavier tungsten fly on point.";
+
+            updateTacticalDOM(windowLabel, conditionRead, flies, rodLine, leader, presentation);
+        }
+
+        function updateTacticalDOM(windowLabel, conditionRead, flies, rodLine, leader, presentation) {
+            document.getElementById('metabolicWindowTag').textContent = windowLabel;
+            document.getElementById('conditionReadText').textContent = conditionRead;
+            document.getElementById('rigRodLine').textContent = rodLine;
+            document.getElementById('rigLeader').textContent = leader;
+            document.getElementById('rigPresentation').textContent = presentation;
+            document.getElementById('vantageBadge').textContent =
+                state.vantage === 'skiff' ? 'Paddleboard / Skiff Angles' : 'Wading Angles';
+
+            const container = document.getElementById('flyCardsContainer');
+            container.innerHTML = flies.map((f, idx) => {
+                const accentColors = [
+                    { border: "border-emerald-500/40", badge: "bg-emerald-500/20 text-emerald-300", num: "bg-emerald-500 text-slate-950" },
+                    { border: "border-sky-500/40", badge: "bg-sky-500/20 text-sky-300", num: "bg-sky-400 text-slate-950" },
+                    { border: "border-amber-500/40", badge: "bg-amber-500/20 text-amber-300", num: "bg-amber-400 text-slate-950" }
+                ][idx];
+
+                return `
+                    <article class="telemetry-card rounded-2xl p-4 border ${accentColors.border} shadow-lg space-y-2.5">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-6 h-6 rounded-lg font-mono font-extrabold text-xs flex items-center justify-center ${accentColors.num}">
+                                    #${idx + 1}
+                                </span>
+                                <div>
+                                    <span class="text-[10px] font-mono uppercase tracking-wider text-slate-400 block">${f.slot}</span>
+                                    <h3 class="text-base font-extrabold text-white leading-tight">${f.name}</h3>
+                                </div>
+                            </div>
+                            <span class="text-[10px] font-mono font-semibold px-2 py-1 rounded-lg ${accentColors.badge} shrink-0">
+                                ${f.category}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-2 pt-1">
+                            <div class="bg-slate-950/80 rounded-xl px-3 py-2 border border-slate-800/80">
+                                <span class="text-[10px] font-mono text-slate-400 block">HOOK SIZE</span>
+                                <span class="text-xs font-mono font-bold text-white">${f.size}</span>
+                            </div>
+                            <div class="bg-slate-950/80 rounded-xl px-3 py-2 border border-slate-800/80">
+                                <span class="text-[10px] font-mono text-slate-400 block">COLORWAY</span>
+                                <span class="text-xs font-bold text-emerald-400">${f.color}</span>
+                            </div>
+                        </div>
+
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            <strong class="text-slate-100">Why now:</strong> ${f.why}
+                        </p>
+
+                        <div class="pt-1 flex justify-end">
+                            <a href="${f.url}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300">
+                                <span>View Pattern / Shop Reference</span>
+                                <i class="fa-solid fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                        </div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        /********************************************************************
+         * 7. INITIALIZE ON WINDOW LOAD
+         ********************************************************************/
+        window.onload = function () {
+            registerInlineManifest();
+            syncControlsWithState();
+            renderTacticalRecommendations();
+            syncAllTelemetry();
+        };
+    </script>
+</body>
+</html>
